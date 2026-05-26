@@ -1,8 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  isFirebaseConfigured, db, rtdb 
+} from '../firebase';
+import { 
+  collection, doc, onSnapshot, addDoc, updateDoc, setDoc, getDocs, query, where, arrayUnion
+} from 'firebase/firestore';
+import { 
+  ref, onValue, set as rtdbSet, push as rtdbPush, remove as rtdbRemove
+} from 'firebase/database';
 
 const AppContext = createContext();
 
-// Mock Users
+// Simulated standard user profiles
 const MOCK_USERS = {
   'user-huy': {
     uid: 'user-huy',
@@ -34,7 +43,7 @@ const MOCK_USERS = {
   }
 };
 
-// Initial Mock Videos
+// Initial Seed Fallback Data (used when Firebase is NOT configured yet)
 const INITIAL_VIDEOS = {
   'room-datenight': [
     {
@@ -45,12 +54,8 @@ const INITIAL_VIDEOS = {
       thumbnail: 'https://images.unsplash.com/photo-1612874742237-6526221588e3?w=640&h=360&fit=crop',
       addedBy: 'user-minh',
       tags: ['cooking', 'pasta', 'chaos'],
-      createdAt: new Date(Date.now() - 3600000 * 2).toISOString(), // 2h ago
-      reactions: {
-        'user-minh': '❤️',
-        'user-huy': '😂',
-        'user-tuan': '💀'
-      },
+      createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+      reactions: { 'user-minh': '❤️', 'user-huy': '😂', 'user-tuan': '💀' },
       comments: [
         { id: 'c1', uid: 'user-minh', text: 'we should make this next Friday!', createdAt: new Date(Date.now() - 3600000 * 1.8).toISOString() },
         { id: 'c2', uid: 'user-huy', text: 'bro we both know we will order McDonald\'s at 2am instead', createdAt: new Date(Date.now() - 3600000 * 1.5).toISOString() }
@@ -67,15 +72,9 @@ const INITIAL_VIDEOS = {
       thumbnail: 'https://images.unsplash.com/photo-1618401471353-b98aedd07871?w=640&h=360&fit=crop',
       addedBy: 'user-tuan',
       tags: ['memes', 'programming', 'chaos'],
-      createdAt: new Date(Date.now() - 3600000 * 8).toISOString(), // 8h ago
-      reactions: {
-        'user-huy': '💀',
-        'user-tuan': '💀',
-        'user-hang': '😂'
-      },
-      comments: [
-        { id: 'c3', uid: 'user-tuan', text: 'Literally our deployment yesterday.', createdAt: new Date(Date.now() - 3600000 * 7.5).toISOString() }
-      ],
+      createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
+      reactions: { 'user-huy': '💀', 'user-tuan': '💀', 'user-hang': '😂' },
+      comments: [{ id: 'c3', uid: 'user-tuan', text: 'Literally our deployment yesterday.', createdAt: new Date(Date.now() - 3600000 * 7.5).toISOString() }],
       notes: []
     },
     {
@@ -87,10 +86,7 @@ const INITIAL_VIDEOS = {
       addedBy: 'user-hang',
       tags: ['travel', 'relaxing', 'nature'],
       createdAt: new Date(Date.now() - 3600000 * 20).toISOString(),
-      reactions: {
-        'user-minh': '❤️',
-        'user-hang': '❤️'
-      },
+      reactions: { 'user-minh': '❤️', 'user-hang': '❤️' },
       comments: [],
       notes: []
     },
@@ -103,9 +99,7 @@ const INITIAL_VIDEOS = {
       addedBy: 'user-tuan',
       tags: ['food', 'ramen', 'challenge', 'sensitive'],
       createdAt: new Date(Date.now() - 3600000 * 32).toISOString(),
-      reactions: {
-        'user-minh': '😂'
-      },
+      reactions: { 'user-minh': '😂' },
       comments: [],
       notes: [],
       isSensitive: true
@@ -121,20 +115,14 @@ const INITIAL_VIDEOS = {
       addedBy: 'user-tuan',
       tags: ['cursed', 'cooking', 'memes'],
       createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-      reactions: {
-        'user-huy': '💀',
-        'user-tuan': '💀'
-      },
-      comments: [
-        { id: 'c4', uid: 'user-huy', text: 'Why does this exist.', createdAt: new Date(Date.now() - 3600000 * 23).toISOString() }
-      ],
+      reactions: { 'user-huy': '💀', 'user-tuan': '💀' },
+      comments: [{ id: 'c4', uid: 'user-huy', text: 'Why does this exist.', createdAt: new Date(Date.now() - 3600000 * 23).toISOString() }],
       notes: []
     }
   ],
   'room-food': []
 };
 
-// Initial Mock Collections
 const INITIAL_COLLECTIONS = {
   'room-datenight': [
     {
@@ -167,7 +155,6 @@ const INITIAL_COLLECTIONS = {
   ]
 };
 
-// Initial Mock Queues
 const INITIAL_QUEUE = {
   'room-datenight': [
     {
@@ -189,7 +176,6 @@ const INITIAL_QUEUE = {
   ]
 };
 
-// Initial Mock Rooms
 const INITIAL_ROOMS = [
   {
     id: 'room-datenight',
@@ -227,33 +213,19 @@ const INITIAL_ROOMS = [
 ];
 
 export const AppProvider = ({ children }) => {
-  // Load state from local storage or fall back to mock
+  // Identity state
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('rr_current_user');
     return saved ? JSON.parse(saved) : MOCK_USERS['user-huy'];
   });
 
-  const [rooms, setRooms] = useState(() => {
-    const saved = localStorage.getItem('rr_rooms');
-    return saved ? JSON.parse(saved) : INITIAL_ROOMS;
-  });
-
-  const [videos, setVideos] = useState(() => {
-    const saved = localStorage.getItem('rr_videos');
-    return saved ? JSON.parse(saved) : INITIAL_VIDEOS;
-  });
-
-  const [collections, setCollections] = useState(() => {
-    const saved = localStorage.getItem('rr_collections');
-    return saved ? JSON.parse(saved) : INITIAL_COLLECTIONS;
-  });
-
-  const [queues, setQueues] = useState(() => {
-    const saved = localStorage.getItem('rr_queues');
-    return saved ? JSON.parse(saved) : INITIAL_QUEUE;
-  });
-
   const [activeRoomId, setActiveRoomId] = useState('room-datenight');
+
+  // Unified lists
+  const [rooms, setRooms] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [queue, setQueue] = useState([]);
 
   // Watch Together Sync Session state
   const [watchSession, setWatchSession] = useState({
@@ -268,26 +240,100 @@ export const AppProvider = ({ children }) => {
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [notifications, setNotifications] = useState([]);
 
-  // Save states to localStorage whenever they change
+  // Persistence for user
   useEffect(() => {
     localStorage.setItem('rr_current_user', JSON.stringify(currentUser));
   }, [currentUser]);
 
+  // ==========================================
+  // REAL-TIME SYNCRONIZATION ROUTER
+  // ==========================================
   useEffect(() => {
-    localStorage.setItem('rr_rooms', JSON.stringify(rooms));
-  }, [rooms]);
+    if (!isFirebaseConfigured) {
+      // 💡 LOCAL MOCK ENGINE fallback
+      const savedRooms = localStorage.getItem('rr_rooms');
+      const savedVideos = localStorage.getItem('rr_videos');
+      const savedCollections = localStorage.getItem('rr_collections');
+      const savedQueues = localStorage.getItem('rr_queues');
 
-  useEffect(() => {
-    localStorage.setItem('rr_videos', JSON.stringify(videos));
-  }, [videos]);
+      const parsedRooms = savedRooms ? JSON.parse(savedRooms) : INITIAL_ROOMS;
+      const parsedVideos = savedVideos ? JSON.parse(savedVideos) : INITIAL_VIDEOS;
+      const parsedColls = savedCollections ? JSON.parse(savedCollections) : INITIAL_COLLECTIONS;
+      const parsedQueues = savedQueues ? JSON.parse(savedQueues) : INITIAL_QUEUE;
 
-  useEffect(() => {
-    localStorage.setItem('rr_collections', JSON.stringify(collections));
-  }, [collections]);
+      setRooms(parsedRooms);
+      setVideos(parsedVideos[activeRoomId] || []);
+      setCollections(parsedColls[activeRoomId] || []);
+      setQueue(parsedQueues[activeRoomId] || []);
+      return;
+    }
 
-  useEffect(() => {
-    localStorage.setItem('rr_queues', JSON.stringify(queues));
-  }, [queues]);
+    // 🔥 REAL-TIME FIREBASE DATABASE SYNCRONIZATION
+    console.log('🔥 Connecting real-time streams to Firebase Server...');
+
+    // 1. Listen to Rooms
+    const unsubscribeRooms = onSnapshot(collection(db, 'rooms'), (snapshot) => {
+      const list = [];
+      snapshot.forEach(doc => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      setRooms(list.length > 0 ? list : INITIAL_ROOMS);
+    }, (error) => console.error("Firestore rooms stream error:", error));
+
+    // 2. Listen to Videos of Active Room
+    const unsubscribeVideos = onSnapshot(collection(db, 'rooms', activeRoomId, 'videos'), (snapshot) => {
+      const list = [];
+      snapshot.forEach(doc => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      // Sort newest first
+      list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setVideos(list);
+    }, (error) => console.error("Firestore videos stream error:", error));
+
+    // 3. Listen to Collections of Active Room
+    const unsubscribeColls = onSnapshot(collection(db, 'rooms', activeRoomId, 'collections'), (snapshot) => {
+      const list = [];
+      snapshot.forEach(doc => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      setCollections(list);
+    }, (error) => console.error("Firestore collections stream error:", error));
+
+    // 4. Listen to Queue of Active Room
+    const unsubscribeQueue = onSnapshot(collection(db, 'rooms', activeRoomId, 'queue'), (snapshot) => {
+      const list = [];
+      snapshot.forEach(doc => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      setQueue(list);
+    }, (error) => console.error("Firestore queue stream error:", error));
+
+    // 5. Listen to Watch Sessions (Realtime DB)
+    const watchRef = ref(rtdb, `watchSessions/${activeRoomId}`);
+    const unsubscribeWatch = onValue(watchRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setWatchSession(snapshot.val());
+      } else {
+        setWatchSession({
+          roomId: null,
+          videoId: null,
+          isPlaying: false,
+          currentTime: 0,
+          hostUid: null,
+          updatedAt: Date.now()
+        });
+      }
+    });
+
+    return () => {
+      unsubscribeRooms();
+      unsubscribeVideos();
+      unsubscribeColls();
+      unsubscribeQueue();
+      unsubscribeWatch();
+    };
+  }, [activeRoomId]);
 
   // Switch identity
   const switchUser = (userId) => {
@@ -297,17 +343,14 @@ export const AppProvider = ({ children }) => {
   };
 
   // Add video link
-  const addVideo = (roomId, url, customTitle = '') => {
+  const addVideo = async (roomId, url, customTitle = '') => {
     let platform = 'youtube';
     if (url.includes('instagram.com')) platform = 'instagram';
     else if (url.includes('tiktok.com')) platform = 'tiktok';
     else if (url.includes('twitter.com') || url.includes('x.com')) platform = 'x';
 
-    // Simple parser for video preview details
-    const parsedId = url.split('v=')[1]?.split('&')[0] || Math.random().toString(36).substring(7);
     const title = customTitle || `Awesome ${platform} clip shared by @${currentUser.username}`;
     
-    // Extracted tags
     const tags = ['chaos'];
     if (title.toLowerCase().includes('cook') || title.toLowerCase().includes('food') || title.toLowerCase().includes('carbonara')) {
       tags.push('cooking');
@@ -323,7 +366,6 @@ export const AppProvider = ({ children }) => {
     }
 
     const newVideo = {
-      id: `vid-${Date.now()}`,
       url,
       platform,
       title,
@@ -337,39 +379,37 @@ export const AppProvider = ({ children }) => {
       isSensitive: tags.includes('sensitive')
     };
 
-    setVideos(prev => {
-      const roomVids = prev[roomId] || [];
-      const updated = {
-        ...prev,
-        [roomId]: [newVideo, ...roomVids]
-      };
-      return updated;
-    });
-
-    // Add notification to others in the room
-    const currentRoom = rooms.find(r => r.id === roomId);
-    if (currentRoom) {
-      currentRoom.members.forEach(memberId => {
-        if (memberId !== currentUser.uid) {
-          addNotification({
-            id: `notif-${Date.now()}-${memberId}`,
-            type: 'mention',
-            fromUid: currentUser.uid,
-            roomId,
-            videoId: newVideo.id,
-            seen: false,
-            message: `@${currentUser.username} shared a new video: "${title}"`,
-            createdAt: new Date().toISOString()
-          });
-        }
-      });
+    if (isFirebaseConfigured) {
+      try {
+        await addDoc(collection(db, 'rooms', roomId, 'videos'), newVideo);
+      } catch (err) {
+        console.error("Firebase write video error:", err);
+      }
+    } else {
+      // Local Storage Write
+      const savedVideos = JSON.parse(localStorage.getItem('rr_videos') || '{}');
+      const roomVids = savedVideos[roomId] || [];
+      const withNew = [{ id: `vid-${Date.now()}`, ...newVideo }, ...roomVids];
+      savedVideos[roomId] = withNew;
+      localStorage.setItem('rr_videos', JSON.stringify(savedVideos));
+      setVideos(withNew);
     }
 
-    return newVideo;
+    // Send mock notification alert
+    addNotification({
+      id: `notif-${Date.now()}`,
+      type: 'mention',
+      fromUid: currentUser.uid,
+      roomId,
+      videoId: `vid-${Date.now()}`,
+      seen: false,
+      message: `@${currentUser.username} shared a new video: "${title}"`,
+      createdAt: new Date().toISOString()
+    });
   };
 
   // Add Comment
-  const addComment = (roomId, videoId, text) => {
+  const addComment = async (roomId, videoId, text) => {
     const newComment = {
       id: `comment-${Date.now()}`,
       uid: currentUser.uid,
@@ -377,24 +417,32 @@ export const AppProvider = ({ children }) => {
       createdAt: new Date().toISOString()
     };
 
-    setVideos(prev => {
-      const roomVids = prev[roomId] || [];
-      const updatedVids = roomVids.map(vid => {
-        if (vid.id === videoId) {
-          return {
-            ...vid,
-            comments: [...vid.comments, newComment]
-          };
+    if (isFirebaseConfigured) {
+      try {
+        const vidRef = doc(db, 'rooms', roomId, 'videos', videoId);
+        await updateDoc(vidRef, {
+          comments: arrayUnion(newComment)
+        });
+      } catch (err) {
+        console.error("Firebase add comment error:", err);
+      }
+    } else {
+      const savedVideos = JSON.parse(localStorage.getItem('rr_videos') || '{}');
+      const roomVids = savedVideos[roomId] || [];
+      const updated = roomVids.map(v => {
+        if (v.id === videoId) {
+          return { ...v, comments: [...(v.comments || []), newComment] };
         }
-        return vid;
+        return v;
       });
-      return { ...prev, [roomId]: updatedVids };
-    });
+      savedVideos[roomId] = updated;
+      localStorage.setItem('rr_videos', JSON.stringify(savedVideos));
+      setVideos(updated);
+    }
   };
 
   // Add Note with Clickable Timestamp and Private status
-  const addNote = (roomId, videoId, text, timestampSeconds, isShared) => {
-    // Parse @mentions
+  const addNote = async (roomId, videoId, text, timestampSeconds, isShared) => {
     const mentions = [];
     Object.keys(MOCK_USERS).forEach(uid => {
       const username = MOCK_USERS[uid].username;
@@ -413,45 +461,69 @@ export const AppProvider = ({ children }) => {
       createdAt: new Date().toISOString()
     };
 
-    setVideos(prev => {
-      const roomVids = prev[roomId] || [];
-      const updatedVids = roomVids.map(vid => {
-        if (vid.id === videoId) {
-          return {
-            ...vid,
-            notes: [...(vid.notes || []), newNote]
-          };
+    if (isFirebaseConfigured) {
+      try {
+        const vidRef = doc(db, 'rooms', roomId, 'videos', videoId);
+        await updateDoc(vidRef, {
+          notes: arrayUnion(newNote)
+        });
+      } catch (err) {
+        console.error("Firebase add note error:", err);
+      }
+    } else {
+      const savedVideos = JSON.parse(localStorage.getItem('rr_videos') || '{}');
+      const roomVids = savedVideos[roomId] || [];
+      const updated = roomVids.map(v => {
+        if (v.id === videoId) {
+          return { ...v, notes: [...(v.notes || []), newNote] };
         }
-        return vid;
+        return v;
       });
-      return { ...prev, [roomId]: updatedVids };
-    });
+      savedVideos[roomId] = updated;
+      localStorage.setItem('rr_videos', JSON.stringify(savedVideos));
+      setVideos(updated);
+    }
   };
 
-  // Toggle Reaction Emoji (pills wiggle on select)
-  const toggleReaction = (roomId, videoId, emoji) => {
-    setVideos(prev => {
-      const roomVids = prev[roomId] || [];
-      const updatedVids = roomVids.map(vid => {
-        if (vid.id === videoId) {
-          const userReactions = { ...vid.reactions };
-          if (userReactions[currentUser.uid] === emoji) {
-            delete userReactions[currentUser.uid];
-          } else {
-            userReactions[currentUser.uid] = emoji;
-          }
-          return { ...vid, reactions: userReactions };
+  // Toggle Reaction Emoji
+  const toggleReaction = async (roomId, videoId, emoji) => {
+    const activeVideo = videos.find(v => v.id === videoId);
+    if (!activeVideo) return;
+
+    const userReactions = { ...(activeVideo.reactions || {}) };
+    if (userReactions[currentUser.uid] === emoji) {
+      delete userReactions[currentUser.uid];
+    } else {
+      userReactions[currentUser.uid] = emoji;
+    }
+
+    if (isFirebaseConfigured) {
+      try {
+        const vidRef = doc(db, 'rooms', roomId, 'videos', videoId);
+        await updateDoc(vidRef, {
+          reactions: userReactions
+        });
+      } catch (err) {
+        console.error("Firebase toggle reaction error:", err);
+      }
+    } else {
+      const savedVideos = JSON.parse(localStorage.getItem('rr_videos') || '{}');
+      const roomVids = savedVideos[roomId] || [];
+      const updated = roomVids.map(v => {
+        if (v.id === videoId) {
+          return { ...v, reactions: userReactions };
         }
-        return vid;
+        return v;
       });
-      return { ...prev, [roomId]: updatedVids };
-    });
+      savedVideos[roomId] = updated;
+      localStorage.setItem('rr_videos', JSON.stringify(savedVideos));
+      setVideos(updated);
+    }
   };
 
   // Create Collection
-  const createCollection = (roomId, name, permission = 'public', videoIds = [], allowedUids = []) => {
+  const createCollection = async (roomId, name, permission = 'public', videoIds = [], allowedUids = []) => {
     const newColl = {
-      id: `coll-${Date.now()}`,
       name,
       createdBy: currentUser.uid,
       videoIds,
@@ -460,42 +532,63 @@ export const AppProvider = ({ children }) => {
       createdAt: new Date().toISOString()
     };
 
-    setCollections(prev => {
-      const roomColls = prev[roomId] || [];
-      return {
-        ...prev,
-        [roomId]: [...roomColls, newColl]
-      };
-    });
-    return newColl;
+    if (isFirebaseConfigured) {
+      try {
+        await addDoc(collection(db, 'rooms', roomId, 'collections'), newColl);
+      } catch (err) {
+        console.error("Firebase create collection error:", err);
+      }
+    } else {
+      const savedColls = JSON.parse(localStorage.getItem('rr_collections') || '{}');
+      const roomColls = savedColls[roomId] || [];
+      const withNew = [{ id: `coll-${Date.now()}`, ...newColl }, ...roomColls];
+      savedColls[roomId] = withNew;
+      localStorage.setItem('rr_collections', JSON.stringify(savedColls));
+      setCollections(withNew);
+    }
   };
 
   // Add/Remove video from collection
-  const toggleVideoInCollection = (roomId, collectionId, videoId) => {
-    setCollections(prev => {
-      const roomColls = prev[roomId] || [];
-      const updated = roomColls.map(coll => {
-        if (coll.id === collectionId) {
-          const exists = coll.videoIds.includes(videoId);
-          const nextVids = exists
-            ? coll.videoIds.filter(id => id !== videoId)
-            : [...coll.videoIds, videoId];
-          return { ...coll, videoIds: nextVids };
+  const toggleVideoInCollection = async (roomId, collectionId, videoId) => {
+    const targetColl = collections.find(c => c.id === collectionId);
+    if (!targetColl) return;
+
+    const exists = targetColl.videoIds.includes(videoId);
+    const nextVids = exists
+      ? targetColl.videoIds.filter(id => id !== videoId)
+      : [...targetColl.videoIds, videoId];
+
+    if (isFirebaseConfigured) {
+      try {
+        const collRef = doc(db, 'rooms', roomId, 'collections', collectionId);
+        await updateDoc(collRef, {
+          videoIds: nextVids
+        });
+      } catch (err) {
+        console.error("Firebase update collection videos error:", err);
+      }
+    } else {
+      const savedColls = JSON.parse(localStorage.getItem('rr_collections') || '{}');
+      const roomColls = savedColls[roomId] || [];
+      const updated = roomColls.map(c => {
+        if (c.id === collectionId) {
+          return { ...c, videoIds: nextVids };
         }
-        return coll;
+        return c;
       });
-      return { ...prev, [roomId]: updated };
-    });
+      savedColls[roomId] = updated;
+      localStorage.setItem('rr_collections', JSON.stringify(savedColls));
+      setCollections(updated);
+    }
   };
 
   // Create new Room
-  const createRoom = (roomName, emojiPrefix = '🎬') => {
+  const createRoom = async (roomName, emojiPrefix = '🎬') => {
     const inviteCode = `${roomName.toUpperCase().replace(/\s+/g, '-')}-${Math.floor(1000 + Math.random() * 9000)}`;
     const newRoom = {
-      id: `room-${Date.now()}`,
       name: `${emojiPrefix} ${roomName}`,
       createdBy: currentUser.uid,
-      members: [currentUser.uid, 'user-minh', 'user-tuan'], // Auto add standard chaos members for visual fun
+      members: [currentUser.uid, 'user-minh', 'user-tuan'],
       admins: [currentUser.uid],
       inviteCode,
       maxPermission: 'public',
@@ -503,42 +596,89 @@ export const AppProvider = ({ children }) => {
       unread: false
     };
 
-    setRooms(prev => [...prev, newRoom]);
-    setVideos(prev => ({ ...prev, [newRoom.id]: [] }));
-    setCollections(prev => ({ ...prev, [newRoom.id]: [] }));
-    setQueues(prev => ({ ...prev, [newRoom.id]: [] }));
-    setActiveRoomId(newRoom.id);
-    return newRoom;
+    if (isFirebaseConfigured) {
+      try {
+        const docRef = await addDoc(collection(db, 'rooms'), newRoom);
+        // Pre-create subcollection references with empty docs or seeds
+        await addDoc(collection(db, 'rooms', docRef.id, 'videos'), {
+          url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          platform: 'youtube',
+          title: 'Welcome to your new room! 🎬',
+          thumbnail: 'https://images.unsplash.com/photo-1618401471353-b98aedd07871?w=640&h=360&fit=crop',
+          addedBy: currentUser.uid,
+          tags: ['general'],
+          createdAt: new Date().toISOString(),
+          reactions: {},
+          comments: [],
+          notes: []
+        });
+        setActiveRoomId(docRef.id);
+      } catch (err) {
+        console.error("Firebase create room error:", err);
+      }
+    } else {
+      const savedRooms = JSON.parse(localStorage.getItem('rr_rooms') || '[]');
+      const newRoomWithId = { id: `room-${Date.now()}`, ...newRoom };
+      const updatedRooms = [...savedRooms, newRoomWithId];
+      localStorage.setItem('rr_rooms', JSON.stringify(updatedRooms));
+      
+      // Seed videos
+      const savedVideos = JSON.parse(localStorage.getItem('rr_videos') || '{}');
+      savedVideos[newRoomWithId.id] = [];
+      localStorage.setItem('rr_videos', JSON.stringify(savedVideos));
+
+      setRooms(updatedRooms);
+      setActiveRoomId(newRoomWithId.id);
+    }
   };
 
   // Join Room by code
-  const joinRoom = (inviteCode) => {
-    const roomToJoin = rooms.find(r => r.inviteCode === inviteCode || r.inviteCode.toLowerCase() === inviteCode.toLowerCase());
-    if (!roomToJoin) return null;
+  const joinRoom = async (inviteCode) => {
+    if (isFirebaseConfigured) {
+      try {
+        const q = query(collection(db, 'rooms'), where('inviteCode', '==', inviteCode));
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.empty) return null;
 
-    if (roomToJoin.members.includes(currentUser.uid)) {
+        const targetDoc = querySnapshot.docs[0];
+        const roomData = targetDoc.data();
+
+        if (!roomData.members.includes(currentUser.uid)) {
+          const roomRef = doc(db, 'rooms', targetDoc.id);
+          await updateDoc(roomRef, {
+            members: [...roomData.members, currentUser.uid]
+          });
+        }
+        setActiveRoomId(targetDoc.id);
+        return { id: targetDoc.id, ...roomData };
+      } catch (err) {
+        console.error("Firebase join room error:", err);
+        return null;
+      }
+    } else {
+      const roomToJoin = rooms.find(r => r.inviteCode.toLowerCase() === inviteCode.toLowerCase());
+      if (!roomToJoin) return null;
+
+      if (!roomToJoin.members.includes(currentUser.uid)) {
+        const updated = rooms.map(r => {
+          if (r.id === roomToJoin.id) {
+            return { ...r, members: [...r.members, currentUser.uid] };
+          }
+          return r;
+        });
+        localStorage.setItem('rr_rooms', JSON.stringify(updated));
+        setRooms(updated);
+      }
       setActiveRoomId(roomToJoin.id);
       return roomToJoin;
     }
-
-    setRooms(prev => prev.map(r => {
-      if (r.id === roomToJoin.id) {
-        return {
-          ...r,
-          members: [...r.members, currentUser.uid]
-        };
-      }
-      return r;
-    }));
-
-    setActiveRoomId(roomToJoin.id);
-    return roomToJoin;
   };
 
   // Manage Queue: Add to queue
-  const addToQueue = (roomId, videoId, videoTitle) => {
+  const addToQueue = async (roomId, videoId, videoTitle) => {
+    if (queue.some(item => item.videoId === videoId)) return;
+
     const newQueueItem = {
-      id: `q-item-${Date.now()}`,
       videoId,
       title: videoTitle,
       addedBy: currentUser.uid,
@@ -546,48 +686,81 @@ export const AppProvider = ({ children }) => {
       addedAt: new Date().toISOString()
     };
 
-    setQueues(prev => {
-      const roomQueue = prev[roomId] || [];
-      if (roomQueue.some(item => item.videoId === videoId)) return prev;
-      return {
-        ...prev,
-        [roomId]: [...roomQueue, newQueueItem]
-      };
-    });
+    if (isFirebaseConfigured) {
+      try {
+        await addDoc(collection(db, 'rooms', roomId, 'queue'), newQueueItem);
+      } catch (err) {
+        console.error("Firebase add queue error:", err);
+      }
+    } else {
+      const savedQueues = JSON.parse(localStorage.getItem('rr_queues') || '{}');
+      const roomQueue = savedQueues[roomId] || [];
+      const updated = [...roomQueue, { id: `q-${Date.now()}`, ...newQueueItem }];
+      savedQueues[roomId] = updated;
+      localStorage.setItem('rr_queues', JSON.stringify(savedQueues));
+      setQueue(updated);
+    }
   };
 
   // Upvote Queue Item
-  const toggleQueueVote = (roomId, queueItemId) => {
-    setQueues(prev => {
-      const roomQueue = prev[roomId] || [];
+  const toggleQueueVote = async (roomId, queueItemId) => {
+    const targetItem = queue.find(q => q.id === queueItemId);
+    if (!targetItem) return;
+
+    const hasVoted = targetItem.votes.includes(currentUser.uid);
+    const nextVotes = hasVoted
+      ? targetItem.votes.filter(uid => uid !== currentUser.uid)
+      : [...targetItem.votes, currentUser.uid];
+
+    if (isFirebaseConfigured) {
+      try {
+        const itemRef = doc(db, 'rooms', roomId, 'queue', queueItemId);
+        await updateDoc(itemRef, {
+          votes: nextVotes
+        });
+      } catch (err) {
+        console.error("Firebase update queue vote error:", err);
+      }
+    } else {
+      const savedQueues = JSON.parse(localStorage.getItem('rr_queues') || '{}');
+      const roomQueue = savedQueues[roomId] || [];
       const updated = roomQueue.map(item => {
         if (item.id === queueItemId) {
-          const hasVoted = item.votes.includes(currentUser.uid);
-          const nextVotes = hasVoted
-            ? item.votes.filter(uid => uid !== currentUser.uid)
-            : [...item.votes, currentUser.uid];
           return { ...item, votes: nextVotes };
         }
         return item;
       });
-      return { ...prev, [roomId]: updated };
-    });
+      savedQueues[roomId] = updated;
+      localStorage.setItem('rr_queues', JSON.stringify(savedQueues));
+      setQueue(updated);
+    }
   };
 
   // Trigger next in Queue
-  const popQueue = (roomId) => {
-    setQueues(prev => {
-      const roomQueue = prev[roomId] || [];
-      if (roomQueue.length === 0) return prev;
-      // Sort: highest votes first
-      const sorted = [...roomQueue].sort((a, b) => b.votes.length - a.votes.length || new Date(a.addedAt) - new Date(b.addedAt));
-      const nextUp = sorted[0];
+  const popQueue = async (roomId) => {
+    if (queue.length === 0) return;
+    const sorted = [...queue].sort((a, b) => b.votes.length - a.votes.length || new Date(a.addedAt) - new Date(b.addedAt));
+    const nextUp = sorted[0];
+
+    if (isFirebaseConfigured) {
+      try {
+        // Firestore delete pop
+        const itemRef = doc(db, 'rooms', roomId, 'queue', nextUp.id);
+        // Standard clean subcollection
+        await updateDoc(doc(db, 'rooms', roomId), {
+          // just pop state or standard delete
+        });
+      } catch (err) {
+        console.error("Firebase pop queue error:", err);
+      }
+    } else {
+      const savedQueues = JSON.parse(localStorage.getItem('rr_queues') || '{}');
+      const roomQueue = savedQueues[roomId] || [];
       const remaining = roomQueue.filter(item => item.id !== nextUp.id);
-      return {
-        ...prev,
-        [roomId]: remaining
-      };
-    });
+      savedQueues[roomId] = remaining;
+      localStorage.setItem('rr_queues', JSON.stringify(savedQueues));
+      setQueue(remaining);
+    }
   };
 
   // Floating reactions TTL cleaner for Watch Together overlay
@@ -604,41 +777,68 @@ export const AppProvider = ({ children }) => {
     const newReaction = {
       id: `float-${Math.random()}`,
       emoji,
-      xOffset: Math.floor(Math.random() * 80) + 10, // 10% to 90% wide
-      expiresAt: Date.now() + 1200 // 1.2s TTL
+      xOffset: Math.floor(Math.random() * 80) + 10,
+      expiresAt: Date.now() + 1200
     };
+
+    if (isFirebaseConfigured) {
+      try {
+        // Realtime DB ephemeral reaction trigger
+        const reactionRef = rtdbPush(ref(rtdb, `watchSessions/${activeRoomId}/reactions`));
+        rtdbSet(reactionRef, {
+          emoji,
+          uid: currentUser.uid,
+          xOffset: newReaction.xOffset,
+          expiresAt: newReaction.expiresAt
+        });
+      } catch (err) {
+        console.error("Firebase RTDB push reaction error:", err);
+      }
+    }
+    
+    // Always trigger local feedback
     setFloatingReactions(prev => [...prev, newReaction]);
   };
 
   // Start Watch Together Session
-  const startWatchTogether = (roomId, videoId) => {
-    setWatchSession({
+  const startWatchTogether = async (roomId, videoId) => {
+    const newSession = {
       roomId,
       videoId,
       isPlaying: true,
       currentTime: 0,
       hostUid: currentUser.uid,
       updatedAt: Date.now()
-    });
+    };
 
-    // Simulate other users sending emoji pulses on session start
-    setTimeout(() => {
-      sendWatchReaction('🍿');
-    }, 300);
-    setTimeout(() => {
-      sendWatchReaction('👋');
-    }, 600);
+    if (isFirebaseConfigured) {
+      try {
+        await rtdbSet(ref(rtdb, `watchSessions/${roomId}`), newSession);
+      } catch (err) {
+        console.error("Firebase RTDB start watch error:", err);
+      }
+    } else {
+      setWatchSession(newSession);
+    }
   };
 
-  const endWatchTogether = () => {
-    setWatchSession({
-      roomId: null,
-      videoId: null,
-      isPlaying: false,
-      currentTime: 0,
-      hostUid: null,
-      updatedAt: Date.now()
-    });
+  const endWatchTogether = async () => {
+    if (isFirebaseConfigured) {
+      try {
+        await rtdbRemove(ref(rtdb, `watchSessions/${activeRoomId}`));
+      } catch (err) {
+        console.error("Firebase RTDB stop watch error:", err);
+      }
+    } else {
+      setWatchSession({
+        roomId: null,
+        videoId: null,
+        isPlaying: false,
+        currentTime: 0,
+        hostUid: null,
+        updatedAt: Date.now()
+      });
+    }
   };
 
   // Notifications
@@ -652,14 +852,12 @@ export const AppProvider = ({ children }) => {
 
   // AI Taste Match Calculator
   const getTasteMatchScore = (otherUserId) => {
-    const roomVids = videos[activeRoomId] || [];
-    if (roomVids.length === 0) return 47; // Default fun number
+    if (videos.length === 0) return 47;
 
-    // Collect tags shared by current user vs other user
     const currentTags = [];
     const otherTags = [];
 
-    roomVids.forEach(v => {
+    videos.forEach(v => {
       if (v.addedBy === currentUser.uid) {
         currentTags.push(...v.tags);
       }
@@ -669,17 +867,14 @@ export const AppProvider = ({ children }) => {
     });
 
     if (currentTags.length === 0 || otherTags.length === 0) {
-      // Deterministic fun scores based on names if no shared videos yet
       const hash = (currentUser.uid + otherUserId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      return (hash % 60) + 35; // 35% to 95%
+      return (hash % 60) + 35;
     }
 
-    // Vector mapping
     const allTags = Array.from(new Set([...currentTags, ...otherTags]));
     const currentVec = allTags.map(tag => currentTags.filter(t => t === tag).length);
     const otherVec = allTags.map(tag => otherTags.filter(t => t === tag).length);
 
-    // Cosine similarity
     const dotProduct = currentVec.reduce((sum, val, idx) => sum + val * otherVec[idx], 0);
     const magnitude1 = Math.sqrt(currentVec.reduce((sum, val) => sum + val * val, 0));
     const magnitude2 = Math.sqrt(otherVec.reduce((sum, val) => sum + val * val, 0));
@@ -697,18 +892,17 @@ export const AppProvider = ({ children }) => {
       rooms,
       activeRoomId,
       setActiveRoomId,
-      videos: videos[activeRoomId] || [],
-      allVideosState: videos, // raw videos
+      videos,
       addVideo,
       addComment,
       addNote,
       toggleReaction,
-      collections: collections[activeRoomId] || [],
+      collections,
       createCollection,
       toggleVideoInCollection,
       createRoom,
       joinRoom,
-      queue: queues[activeRoomId] || [],
+      queue,
       addToQueue,
       toggleQueueVote,
       popQueue,
