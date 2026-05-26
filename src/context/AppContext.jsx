@@ -246,18 +246,37 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   const handleGoogleLogin = async () => {
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      console.error("Google Auth login failure:", error);
+    if (isFirebaseConfigured) {
+      try {
+        await signInWithGoogle();
+      } catch (error) {
+        console.error("Google Auth login failure:", error);
+        alert(`Real Google login failed. Make sure you enabled Google under 'Sign-in method' in your Firebase Auth console!\n\nError: ${error.message}`);
+      }
+    } else {
+      // 💡 Simulated Google login for instant feedback in local mode!
+      const googleUser = {
+        uid: 'google-simulated-uid',
+        username: 'google_huy',
+        displayName: 'Huy (Simulated Google)',
+        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face',
+        email: 'huy_google@gmail.com',
+        isGoogle: true
+      };
+      setCurrentUser(googleUser);
     }
   };
 
   const handleGoogleLogout = async () => {
-    try {
-      await logOut();
-    } catch (error) {
-      console.error("Google Auth logout failure:", error);
+    if (isFirebaseConfigured) {
+      try {
+        await logOut();
+      } catch (error) {
+        console.error("Google Auth logout failure:", error);
+      }
+    } else {
+      // Local reset
+      setCurrentUser(MOCK_USERS['user-huy']);
     }
   };
 
