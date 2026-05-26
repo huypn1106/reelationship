@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  isFirebaseConfigured, db, rtdb 
+  isFirebaseConfigured, db, rtdb, auth, signInWithGoogle, logOut
 } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { 
   collection, doc, onSnapshot, addDoc, updateDoc, setDoc, getDocs, query, where, arrayUnion
 } from 'firebase/firestore';
@@ -218,6 +219,47 @@ export const AppProvider = ({ children }) => {
     const saved = localStorage.getItem('rr_current_user');
     return saved ? JSON.parse(saved) : MOCK_USERS['user-huy'];
   });
+
+  // Listen for real Firebase Google Auth state change
+  useEffect(() => {
+    if (!isFirebaseConfigured || !auth) return;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        // Authenticated Google user!
+        const googleUser = {
+          uid: firebaseUser.uid,
+          username: firebaseUser.email ? firebaseUser.email.split('@')[0] : 'user',
+          displayName: firebaseUser.displayName || 'Google User',
+          photoURL: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face',
+          email: firebaseUser.email,
+          isGoogle: true
+        };
+        setCurrentUser(googleUser);
+      } else {
+        // Reset or fallback to mock user
+        setCurrentUser(MOCK_USERS['user-huy']);
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      console.error("Google Auth login failure:", error);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    try {
+      await logOut();
+    } catch (error) {
+      console.error("Google Auth logout failure:", error);
+    }
+  };
 
   const [activeRoomId, setActiveRoomId] = useState('room-datenight');
 
@@ -914,7 +956,10 @@ export const AppProvider = ({ children }) => {
       sendWatchReaction,
       notifications,
       markAllNotificationsSeen,
-      getTasteMatchScore
+      getTasteMatchScore,
+      isFirebaseConfigured,
+      handleGoogleLogin,
+      handleGoogleLogout
     }}>
       {children}
     </AppContext.Provider>

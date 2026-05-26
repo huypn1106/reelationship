@@ -35,7 +35,10 @@ function Dashboard() {
     sendWatchReaction,
     notifications,
     markAllNotificationsSeen,
-    getTasteMatchScore
+    getTasteMatchScore,
+    isFirebaseConfigured,
+    handleGoogleLogin,
+    handleGoogleLogout
   } = useApp();
 
   // Navigation tab state
@@ -314,6 +317,38 @@ function Dashboard() {
                   ))
                 )}
               </div>
+            )}
+
+            {isFirebaseConfigured && (
+              currentUser.isGoogle ? (
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', borderRadius: '8px' }} 
+                  onClick={handleGoogleLogout}
+                >
+                  <span>🚪</span>
+                  <span>sign out</span>
+                </button>
+              ) : (
+                <button 
+                  className="btn-primary" 
+                  style={{ 
+                    padding: '6px 12px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px', 
+                    fontSize: '12px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #4285F4, #ea4335)',
+                    border: 'none',
+                    color: '#fff'
+                  }} 
+                  onClick={handleGoogleLogin}
+                >
+                  <span style={{ fontWeight: '800' }}>G</span>
+                  <span>google login</span>
+                </button>
+              )
             )}
 
             <div className="active-identity">

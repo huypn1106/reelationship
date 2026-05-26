@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
@@ -22,6 +22,7 @@ let auth = null;
 let db = null;
 let rtdb = null;
 let storage = null;
+let googleProvider = null;
 
 if (isFirebaseConfigured) {
   try {
@@ -30,6 +31,7 @@ if (isFirebaseConfigured) {
     db = getFirestore(app);
     rtdb = getDatabase(app);
     storage = getStorage(app);
+    googleProvider = new GoogleAuthProvider();
     console.log('🎬 Firebase initialized successfully in client!');
   } catch (error) {
     console.error('⚠️ Failed to initialize Firebase:', error);
@@ -38,4 +40,29 @@ if (isFirebaseConfigured) {
   console.log('💡 Running Reelationship in premium client-side fallback mode (local storage & in-memory sync engine). Paste real credentials in .env to connect.');
 }
 
-export { isFirebaseConfigured, auth, db, rtdb, storage };
+// Authentication Helpers
+const signInWithGoogle = async () => {
+  if (!isFirebaseConfigured || !auth || !googleProvider) {
+    console.warn("Firebase not configured for Google Sign-In.");
+    return null;
+  }
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    console.error("Google Sign-In Error:", error);
+    throw error;
+  }
+};
+
+const logOut = async () => {
+  if (!isFirebaseConfigured || !auth) return;
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error("Sign-Out Error:", error);
+  }
+};
+
+export { isFirebaseConfigured, auth, db, rtdb, storage, signInWithGoogle, logOut };
+
